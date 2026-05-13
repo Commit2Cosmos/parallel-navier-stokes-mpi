@@ -304,6 +304,16 @@ void solve_NS(void)
 	}
 }
 
+void free_memory(void) {
+	free_continuous_array(P, P_1d);
+	free_continuous_array(P_old, P_old_1d);
+	free_continuous_array(u, u_1d);
+	free_continuous_array(u_old, u_old_1d);
+	free_continuous_array(v, v_1d);
+	free_continuous_array(v_old, v_old_1d);
+	free_continuous_array(PPrhs, PPrhs_1d);
+}
+
 int main(int argc, char *argv[])
 {
     MPI_Init(&argc, &argv);
@@ -315,13 +325,7 @@ int main(int argc, char *argv[])
     setup();
 	solve_NS();
 
-    free_continuous_array(P, P_1d);
-	free_continuous_array(P_old, P_old_1d);
-	free_continuous_array(u, u_1d);
-	free_continuous_array(u_old, u_old_1d);
-	free_continuous_array(v, v_1d);
-	free_continuous_array(v_old, v_old_1d);
-	free_continuous_array(PPrhs, PPrhs_1d);
+	free_memory();
 
     MPI_Finalize();
 }
