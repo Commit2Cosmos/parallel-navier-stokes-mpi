@@ -9,7 +9,6 @@ using namespace std;
 
 int id, p;
 
-int rank, size;
 // index of the first interior point of the current process
 int i_start, j_start;
 // number of interior grid points of the current process in x/y dir
@@ -93,6 +92,22 @@ void free_continuous_array(double**& array_2d, double*& array_1d)
 	delete[] array_2d;
 }
 
+void find_tiles(int p, int Nx_inner, int Ny_inner, int &px, int &py) {
+    // Nx_inner = Nx-2 = 99, Ny_inner = Ny-2 = 49
+    double best_cost = 1e18;
+    for (int candidate_px = 1; candidate_px <= p; candidate_px++) {
+        if (p % candidate_px != 0) continue;  // must divide evenly
+        int candidate_py = p / candidate_px;
+        double cost = (double)Nx_inner / candidate_px
+                    + (double)Ny_inner / candidate_py;
+        if (cost < best_cost) {
+            best_cost = cost;
+            px = candidate_px;
+            py = candidate_py;
+        }
+    }
+}
+
 void setup_decomposition(void) 
 {
     // TODO: remove 1 core test + write proper decomposition
@@ -108,8 +123,12 @@ void setup_decomposition(void)
         return;
     }
 
-    if (id == 0) cerr << "Multi-process decomposition not implemented!\n";
-    MPI_Abort(MPI_COMM_WORLD, 1);
+	find_tiles(p, Nx-2, Ny-2, px, py);
+
+	if (id == 0) {
+		cout << "px: " << px << endl;
+		cout << "py: " << py << endl;
+	}
 }
 
 void set_pressure_BCs(void) {
@@ -328,10 +347,10 @@ int main(int argc, char *argv[])
 	MPI_Comm_size(MPI_COMM_WORLD, &p);
 
     setup_decomposition();
-    setup();
-	solve_NS();
+    // setup();
+	// solve_NS();
 
-	free_memory();
+	// free_memory();
 
     MPI_Finalize();
 }
