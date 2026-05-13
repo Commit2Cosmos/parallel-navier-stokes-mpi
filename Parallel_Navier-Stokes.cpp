@@ -9,9 +9,15 @@ using namespace std;
 
 int id, p;
 
-int nx_local, ny_local;
+int rank, size;
+// index of the first interior point of the current process
 int i_start, j_start;
-int rank, size, px, py, rank_row, rank_col;
+// number of interior grid points of the current process in x/y dir
+int nx_local, ny_local;
+// row/col index of the current process in the process grid
+int rank_row, rank_col;
+// mpi processes in x/y dir
+int px, py;
 
 const int Nx = 101;
 const int Ny = 51;
