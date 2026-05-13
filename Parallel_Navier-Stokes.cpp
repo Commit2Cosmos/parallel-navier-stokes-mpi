@@ -93,7 +93,6 @@ void free_continuous_array(double**& array_2d, double*& array_1d)
 }
 
 void find_tiles(int p, int Nx_inner, int Ny_inner, int &px, int &py) {
-    // Nx_inner = Nx-2 = 99, Ny_inner = Ny-2 = 49
     double best_cost = 1e18;
     for (int candidate_px = 1; candidate_px <= p; candidate_px++) {
         if (p % candidate_px != 0) continue;  // must divide evenly
@@ -125,10 +124,26 @@ void setup_decomposition(void)
 
 	find_tiles(p, Nx-2, Ny-2, px, py);
 
-	if (id == 0) {
-		cout << "px: " << px << endl;
-		cout << "py: " << py << endl;
-	}
+	rank_col = id % px;
+	rank_row = id / px;
+
+	int Nx_inner = Nx - 2;
+	int base_x = Nx_inner / px;
+	int rem_x = Nx_inner % px;
+	nx_local = base_x + (rank_col < rem_x ? 1 : 0);
+
+	int Ny_inner = Ny - 2;
+	int base_y = Ny_inner / py;
+	int rem_y = Ny_inner % py;
+	ny_local = base_y + (rank_row < rem_y ? 1 : 0);
+
+	i_start = 1 + rank_col*base_x + min(rem_x, rank_col);
+	j_start = 1 + rank_row*base_y + min(rem_y, rank_row);
+
+	// cout << "Process " << id << " nx_local: " << nx_local << endl;
+	// cout << "Process " << id << " ny_local: " << ny_local << endl;
+	// cout << "Process " << id << " i_start: " << i_start << endl;
+	// cout << "Process " << id << " j_start: " << j_start << endl;
 }
 
 void set_pressure_BCs(void) {
