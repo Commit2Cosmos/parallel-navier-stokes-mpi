@@ -124,11 +124,14 @@ void setup_decomposition(void)
 	int rem_y = Ny_inner % py;
 	ny_local = base_y + (rank_row < rem_y ? 1 : 0);
 
+	// + 1 to account for ghost nodes
+	// there are rank_ processes before current one, each base_ long/tall
+	// + the number of extra elements in previous processes due to uneven split
 	i_start = 1 + rank_col*base_x + min(rem_x, rank_col);
 	j_start = 1 + rank_row*base_y + min(rem_y, rank_row);
 }
 
-void create_column_datatype(double** data, int nx_local, int col) {
+MPI_Datatype create_column_datatype(double** data, int col) {
 	// number of elements in the block
 	int block_lengths[nx_local];
 	// datatype of each element
@@ -143,7 +146,7 @@ void create_column_datatype(double** data, int nx_local, int col) {
 	// loop over 
 	for (int i = 0; i < nx_local; i++) {
 		block_lengths[i] = 1;
-		types[i] = MPI_Double;
+		types[i] = MPI_DOUBLE;
 
 		MPI_Aint addr;
     	MPI_Get_address(&data[i+1][col], &addr);
@@ -155,14 +158,15 @@ void create_column_datatype(double** data, int nx_local, int col) {
 	MPI_Datatype col_type;
 	MPI_Type_create_struct(nx_local, block_lengths, offsets, types, &col_type);
 	MPI_Type_commit(&col_type);
+	return col_type;
 }
 
 // for compatibility, not strictly necessary since row data is already contiguous
-void create_row_datatype(double** data, int ny_local, int row) {
+MPI_Datatype create_row_datatype() {
 	// number of elements in the block
 	int block_lengths[1] = { ny_local };
 	// datatype of each element
-	MPI_Datatype types[1] = { MPI_Double };
+	MPI_Datatype types[1] = { MPI_DOUBLE };
 	// byte offset to reach this block from anchor address
 	MPI_Aint offsets[1] = { 0 };
 
@@ -170,6 +174,56 @@ void create_row_datatype(double** data, int ny_local, int row) {
 	MPI_Datatype row_type;
 	MPI_Type_create_struct(1, block_lengths, offsets, types, &row_type);
 	MPI_Type_commit(&row_type);
+	return row_type;
+}
+
+void exchange(double** data) {
+	int left = (rank_col > 0) ? rank_row * px + (rank_col - 1) : MPI_PROC_NULL;
+    int right = (rank_col < px - 1) ? rank_row * px + (rank_col + 1) : MPI_PROC_NULL;
+    int bottom = (rank_row > 0) ? (rank_row - 1) * px + rank_col : MPI_PROC_NULL;
+    int top = (rank_row < py - 1) ? (rank_row + 1) * px + rank_col : MPI_PROC_NULL;
+
+	MPI_Datatype send_left = create_column_datatype(data, 1);
+    MPI_Datatype send_right = create_column_datatype(data, nx_local);
+    MPI_Datatype recv_left = create_column_datatype(data, 0);
+    MPI_Datatype recv_right = create_column_datatype(data, nx_local+1);
+	
+	// only need 1 row type for all communications
+	MPI_Datatype row_type = create_row_datatype();
+	
+	MPI_Request reqs[8];
+	int count = 0;
+    int tag = 0;
+
+	// Recvs
+	// left
+	MPI_Irecv(data[1], 1, recv_left, left, tag, MPI_COMM_WORLD, &reqs[count++]);
+	// right
+	MPI_Irecv(data[1], 1, recv_right, right, tag, MPI_COMM_WORLD, &reqs[count++]);
+	// bottom
+	MPI_Irecv(&data[0][1], 1, row_type, bottom, tag, MPI_COMM_WORLD, &reqs[count++]);
+	// top
+	MPI_Irecv(&data[ny_local+1][1], 1, row_type, top, tag, MPI_COMM_WORLD, &reqs[count++]);
+	
+	// Sends
+	// left
+	MPI_Isend(data[1], 1, send_left, left, tag, MPI_COMM_WORLD, &reqs[count++]);
+	// right
+	MPI_Isend(data[1], 1, send_right, right, tag, MPI_COMM_WORLD, &reqs[count++]);
+	// bottom
+	MPI_Isend(&data[1][1], 1, row_type, bottom, tag, MPI_COMM_WORLD, &reqs[count++]);
+	// top
+	MPI_Isend(&data[ny_local][1], 1, row_type, top, tag, MPI_COMM_WORLD, &reqs[count++]);
+
+	// wait for all
+	MPI_Waitall(8, reqs, MPI_STATUSES_IGNORE);
+
+    // Free all types
+    MPI_Type_free(&send_left);
+	MPI_Type_free(&recv_left);
+    MPI_Type_free(&send_right);
+	MPI_Type_free(&recv_right);
+    MPI_Type_free(&row_type);
 }
 
 void set_pressure_BCs(void) {
