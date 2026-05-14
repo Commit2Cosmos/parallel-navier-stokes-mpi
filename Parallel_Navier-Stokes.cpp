@@ -109,19 +109,6 @@ void find_tiles(int p, int Nx_inner, int Ny_inner, int &px, int &py) {
 
 void setup_decomposition(void) 
 {
-    // TODO: remove 1 core test + write proper decomposition
-    if (p == 1) {
-        nx_local = Nx - 2;
-        ny_local = Ny - 2;
-        i_start  = 1;
-        j_start  = 1;
-        rank_row = 0;
-        rank_col = 0;
-        px = 1;
-        py = 1;
-        return;
-    }
-
 	find_tiles(p, Nx-2, Ny-2, px, py);
 
 	rank_col = id % px;
@@ -139,11 +126,6 @@ void setup_decomposition(void)
 
 	i_start = 1 + rank_col*base_x + min(rem_x, rank_col);
 	j_start = 1 + rank_row*base_y + min(rem_y, rank_row);
-
-	// cout << "Process " << id << " nx_local: " << nx_local << endl;
-	// cout << "Process " << id << " ny_local: " << ny_local << endl;
-	// cout << "Process " << id << " i_start: " << i_start << endl;
-	// cout << "Process " << id << " j_start: " << j_start << endl;
 }
 
 void set_pressure_BCs(void) {
@@ -362,10 +344,10 @@ int main(int argc, char *argv[])
 	MPI_Comm_size(MPI_COMM_WORLD, &p);
 
     setup_decomposition();
-    // setup();
-	// solve_NS();
+    setup();
+	solve_NS();
 
-	// free_memory();
+	free_memory();
 
     MPI_Finalize();
 }
