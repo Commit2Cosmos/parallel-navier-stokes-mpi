@@ -18,8 +18,8 @@ int rank_row, rank_col;
 // mpi processes in x/y dir
 int px, py;
 
-const int Nx = 102;
-const int Ny = 52;
+const int Nx = 32;
+const int Ny = 18;
 
 const double Lx = 0.1, Ly = 0.05;
 const double rho = 1000, nu = 1e-6;
@@ -131,14 +131,14 @@ void setup_decomposition(void)
 	j_start = 1 + rank_row*base_y + min(rem_y, rank_row);
 }
 
-MPI_Datatype create_row_datatype(double** data, int j_fixed)
+MPI_Datatype create_row_datatype(double** data, int j_fixed, double* buf_base)
 {
     vector<int> block_lengths(nx_local, 1);
     vector<MPI_Datatype> types(nx_local, MPI_DOUBLE);
     vector<MPI_Aint> offsets(nx_local);
 
     MPI_Aint base_addr;
-    MPI_Get_address(&data[1][0], &base_addr);
+    MPI_Get_address(buf_base, &base_addr);
 
     for (int i = 1; i <= nx_local; i++) {
         MPI_Aint addr;
@@ -162,10 +162,10 @@ void exchange(double** data)
     MPI_Request reqs[8];
     int count = 0;
 
-    MPI_Datatype recv_bottom_type = create_row_datatype(data, 0);
-    MPI_Datatype recv_top_type = create_row_datatype(data, ny_local + 1);
-    MPI_Datatype send_bottom_type = create_row_datatype(data, 1);
-    MPI_Datatype send_top_type = create_row_datatype(data, ny_local);
+    MPI_Datatype recv_bottom_type = create_row_datatype(data, 0, &data[1][0]);
+    MPI_Datatype recv_top_type = create_row_datatype(data, ny_local + 1, &data[1][ny_local + 1]);
+    MPI_Datatype send_bottom_type = create_row_datatype(data, 1, &data[1][1]);
+    MPI_Datatype send_top_type = create_row_datatype(data, ny_local, &data[1][ny_local]);
 
 	
     // Receive ghost cells
@@ -250,8 +250,6 @@ void setup(void)
     if (i_start == 1)
         for (int j = 0; j <= ny_local+1; j++)
             P[0][j] = P_max;
-
-	set_pressure_BCs();
 
 	memcpy(P_old_1d, P_1d, m * n * sizeof(double));
 
@@ -345,9 +343,20 @@ void set_velocity_BCs(void)
 	    for (int j = 1; j <= ny_local; j++) 
 			u[0][j] = u[1][j];
 
-    if (i_start + nx_local == Nx - 1)
-	    for (int j = 0; j <= ny_local / 2; j++) 
-			u[nx_local + 1][j] = u[nx_local][j];
+    int Ny_inner = Ny - 2;
+	int outlet_jmax = Ny_inner / 2;
+
+	// only processes next to right wall
+	if (i_start + nx_local == Nx - 1) {
+		// loop through interior nodes
+		for (int j = 1; j <= ny_local; j++) {
+			// only apply BC if node is on the boundary
+			int j_global = j_start + (j - 1);
+			if (j_global <= outlet_jmax) {
+				u[nx_local + 1][j] = u[nx_local][j];
+			}
+		}
+	}
 }
 
 double project_velocity(void)
@@ -446,13 +455,13 @@ int main(int argc, char *argv[])
 	MPI_Comm_size(MPI_COMM_WORLD, &p);
 
     setup_decomposition();
-	cout << "id " << id << endl;
-	cout << "nx_local " << nx_local << endl;
-	cout << "ny_local: " << ny_local << endl;
-	cout << "rank_row: " << rank_row << endl;
-	cout << "rank_col: " << rank_col << endl;
-	cout << "px: " << px << endl;
-	cout << "py: " << py << endl;
+	// cout << "id " << id << endl;
+	// cout << "nx_local " << nx_local << endl;
+	// cout << "ny_local: " << ny_local << endl;
+	// cout << "rank_row: " << rank_row << endl;
+	// cout << "rank_col: " << rank_col << endl;
+	// cout << "px: " << px << endl;
+	// cout << "py: " << py << endl;
     setup();
 	solve_NS();
 	free_memory();
