@@ -299,6 +299,7 @@ int pressure_poisson_jacobi(double rtol = 1.e-5)
 	while (tol > rtol)
 	{
 		swap(P, P_old);
+		exchange(P_old);
 		double sum_val = 0.0;
 		tol = 0.0;
 		it++;
@@ -408,7 +409,14 @@ void solve_NS(void)
 		swap(u, u_old);
 		swap(v, v_old);
 
+		exchange(u_old);
+		exchange(v_old);
+
 		calculate_intermediate_velocity();
+
+		exchange(u);
+		exchange(v);
+
 		calculate_ppm_RHS_central();
 		its = pressure_poisson_jacobi(1.e-5);
 		vel_max = project_velocity();
