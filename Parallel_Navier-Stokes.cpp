@@ -42,6 +42,16 @@ double* PPrhs_1d;
 
 double dx, dy, dt, t;
 
+const int OBS_I_MIN = Nx * 0.50;
+const int OBS_I_MAX = Nx * 0.55;
+const int OBS_J_MIN = Ny * 0.3;
+const int OBS_J_MAX = Ny * 0.4;
+
+inline bool is_obstacle(int i_global, int j_global) {
+    return i_global >= OBS_I_MIN && i_global <= OBS_I_MAX &&
+           j_global >= OBS_J_MIN && j_global <= OBS_J_MAX;
+}
+
 static void h5_check(herr_t status, const char* msg)
 {
     if (status < 0) {
@@ -485,6 +495,17 @@ void set_velocity_BCs(void)
 			}
 		}
 	}
+
+    for (int i = 1; i <= nx_local; i++) {
+        for (int j = 1; j <= ny_local; j++) {
+            int ig = i_start + (i - 1);
+            int jg = j_start + (j - 1);
+            if (is_obstacle(ig, jg)) {
+                u[i][j] = 0.0;
+                v[i][j] = 0.0;
+            }
+        }
+    }
 }
 
 double project_velocity(void)
@@ -532,6 +553,7 @@ void solve_NS(void)
 		exchange(v_old);
 
 		calculate_intermediate_velocity();
+        set_velocity_BCs();
 
 		// communicate velocities, since were updated by calculate_intermediate_velocity
 		exchange(u);
