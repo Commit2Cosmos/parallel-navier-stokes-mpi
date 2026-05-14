@@ -216,9 +216,13 @@ void set_pressure_BCs(void) {
 
     // No slip over half on the right wall, so zero normal gradient for pressure
     // Apply only if processes right wall
-    if (i_start + nx_local == Nx - 1)
-        for (int j = (Ny / 2) - j_start + 1; j <= ny_local + 1; j++)
-    		P[nx_local + 1][j] = P[nx_local][j];
+    if (i_start + nx_local == Nx - 1) {
+        for (int j = 1; j <= ny_local; j++) {
+            int j_global = j_start + (j - 1);
+            if (j_global >= Ny/2)
+                P[nx_local + 1][j] = P[nx_local][j];
+        }
+    }
 }
 
 void setup(void)
@@ -381,7 +385,7 @@ void solve_NS(void)
 {
 	double vel_max = 0.0;
 	int time_it = 0;
-	int its;
+	int its = 0;
 	int out_it = 0;
 	double t_out = dt_out;
 
@@ -455,13 +459,6 @@ int main(int argc, char *argv[])
 	MPI_Comm_size(MPI_COMM_WORLD, &p);
 
     setup_decomposition();
-	// cout << "id " << id << endl;
-	// cout << "nx_local " << nx_local << endl;
-	// cout << "ny_local: " << ny_local << endl;
-	// cout << "rank_row: " << rank_row << endl;
-	// cout << "rank_col: " << rank_col << endl;
-	// cout << "px: " << px << endl;
-	// cout << "py: " << py << endl;
     setup();
 	solve_NS();
 	free_memory();
