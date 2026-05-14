@@ -41,42 +41,6 @@ double* PPrhs_1d;
 
 double dx, dy, dt, t;
 
-void grids_to_file(int out)
-{
-	//Write the output for a single time step to file
-	stringstream fname;
-	fstream f1;
-	fname << "./out/P" << "_" << out << ".dat";
-	f1.open(fname.str().c_str(), ios_base::out);
-	for (int i = 0; i <= nx_local; i++)
-	{
-		for (int j = 0; j <= ny_local; j++)
-			f1 << P[i][j] << "\t";
-		f1 << endl;
-	}
-	f1.close();
-	fname.str("");
-	fname << "./out/u" << "_" << out << ".dat";
-	f1.open(fname.str().c_str(), ios_base::out);
-	for (int i = 0; i <= nx_local; i++)
-	{
-		for (int j = 0; j <= ny_local; j++)
-			f1 << u[i][j] << "\t";
-		f1 << endl;
-	}
-	f1.close();
-	fname.str("");
-	fname << "./out/v" << "_" << out << ".dat";
-	f1.open(fname.str().c_str(), ios_base::out);
-	for (int i = 0; i <= nx_local; i++)
-	{
-		for (int j = 0; j <= ny_local; j++)
-			f1 << v[i][j] << "\t";
-		f1 << endl;
-	}
-	f1.close();
-}
-
 void setup_continuous_array(double**& array_2d, double*& array_1d, int m, int n)
 {
 	array_1d = new double[m * n];
@@ -389,7 +353,7 @@ void solve_NS(void)
 	int out_it = 0;
 	double t_out = dt_out;
 
-	// grids_to_file(out_it);
+	// TODO: save here 
 
 	while (t < t_end)
 	{
@@ -432,7 +396,7 @@ void solve_NS(void)
 		{
 			out_it++;
 			t_out += dt_out;
-			// grids_to_file(out_it);
+			grids_to_file(out_it);
 
 			if (id == 0) {
 				cout << time_it << ": " << t << " Jacobi iterations: " << its << ", vel_max: " << vel_max << endl;
