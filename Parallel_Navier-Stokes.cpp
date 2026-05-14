@@ -147,8 +147,7 @@ MPI_Datatype create_row_datatype(double** data, int j_fixed)
     }
 
     MPI_Datatype face_type;
-    MPI_Type_create_struct(nx_local, block_lengths.data(),
-                           offsets.data(), types.data(), &face_type);
+    MPI_Type_create_struct(nx_local, block_lengths.data(), offsets.data(), types.data(), &face_type);
     MPI_Type_commit(&face_type);
     return face_type;
 }
@@ -168,34 +167,33 @@ void exchange(double** data)
     MPI_Datatype send_bottom_type = create_row_datatype(data, 1);
     MPI_Datatype send_top_type = create_row_datatype(data, ny_local);
 
-	int tag = 0;
+	
     // Receive ghost cells
-
     // left ghost column: x = 0, y = 1..ny_local
-    MPI_Irecv(&data[0][1], ny_local, MPI_DOUBLE, left, tag, MPI_COMM_WORLD, &reqs[count++]);
+    MPI_Irecv(&data[0][1], ny_local, MPI_DOUBLE, left, 0, MPI_COMM_WORLD, &reqs[count++]);
 
     // right ghost column: x = nx_local+1, y = 1..ny_local
-    MPI_Irecv(&data[nx_local + 1][1], ny_local, MPI_DOUBLE, right, tag, MPI_COMM_WORLD, &reqs[count++]);
+    MPI_Irecv(&data[nx_local + 1][1], ny_local, MPI_DOUBLE, right, 1, MPI_COMM_WORLD, &reqs[count++]);
 
     // bottom ghost row: y = 0, x = 1..nx_local
-    MPI_Irecv(&data[1][0], 1, recv_bottom_type, bottom, tag, MPI_COMM_WORLD, &reqs[count++]);
+    MPI_Irecv(&data[1][0], 1, recv_bottom_type, bottom, 2, MPI_COMM_WORLD, &reqs[count++]);
 
     // top ghost row: y = ny_local+1, x = 1..nx_local
-    MPI_Irecv(&data[1][ny_local + 1], 1, recv_top_type, top, tag, MPI_COMM_WORLD, &reqs[count++]);
+    MPI_Irecv(&data[1][ny_local + 1], 1, recv_top_type, top, 3, MPI_COMM_WORLD, &reqs[count++]);
 
     // Send interior boundary cells
 
     // send left interior column: x = 1, y = 1..ny_local
-    MPI_Isend(&data[1][1], ny_local, MPI_DOUBLE, left, tag, MPI_COMM_WORLD, &reqs[count++]);
+    MPI_Isend(&data[1][1], ny_local, MPI_DOUBLE, left, 1, MPI_COMM_WORLD, &reqs[count++]);
 
     // send right interior column: x = nx_local, y = 1..ny_local
-    MPI_Isend(&data[nx_local][1], ny_local, MPI_DOUBLE, right, tag, MPI_COMM_WORLD, &reqs[count++]);
+    MPI_Isend(&data[nx_local][1], ny_local, MPI_DOUBLE, right, 0, MPI_COMM_WORLD, &reqs[count++]);
 
     // send bottom interior row: y = 1, x = 1..nx_local
-    MPI_Isend(&data[1][1], 1, send_bottom_type, bottom, tag, MPI_COMM_WORLD, &reqs[count++]);
+    MPI_Isend(&data[1][1], 1, send_bottom_type, bottom, 3, MPI_COMM_WORLD, &reqs[count++]);
 
     // send top interior row: y = ny_local, x = 1..nx_local
-    MPI_Isend(&data[1][ny_local], 1, send_top_type, top, tag, MPI_COMM_WORLD, &reqs[count++]);
+    MPI_Isend(&data[1][ny_local], 1, send_top_type, top, 2, MPI_COMM_WORLD, &reqs[count++]);
 
     MPI_Waitall(count, reqs, MPI_STATUSES_IGNORE);
 
@@ -448,9 +446,13 @@ int main(int argc, char *argv[])
 	MPI_Comm_size(MPI_COMM_WORLD, &p);
 
     setup_decomposition();
-	// cout << "id " << id << " nx_local " << nx_local << " ny_local: " << ny_local << endl;
-	// cout << "rank_row: " << rank_row << endl;
-	// cout << "rank_col:" << rank_col << endl;
+	cout << "id " << id << endl;
+	cout << "nx_local " << nx_local << endl;
+	cout << "ny_local: " << ny_local << endl;
+	cout << "rank_row: " << rank_row << endl;
+	cout << "rank_col: " << rank_col << endl;
+	cout << "px: " << px << endl;
+	cout << "py: " << py << endl;
     setup();
 	solve_NS();
 	free_memory();
