@@ -128,6 +128,50 @@ void setup_decomposition(void)
 	j_start = 1 + rank_row*base_y + min(rem_y, rank_row);
 }
 
+void create_column_datatype(double** data, int nx_local, int col) {
+	// number of elements in the block
+	int block_lengths[nx_local];
+	// datatype of each element
+	MPI_Datatype types[nx_local];
+	// byte offset to reach this block from anchor address
+	MPI_Aint offsets[nx_local];
+
+	// anchor address == address of first interior row
+	MPI_Aint base_addr;
+    MPI_Get_address(data[1], &base_addr);
+
+	// loop over 
+	for (int i = 0; i < nx_local; i++) {
+		block_lengths[i] = 1;
+		types[i] = MPI_Double;
+
+		MPI_Aint addr;
+    	MPI_Get_address(&data[i+1][col], &addr);
+
+		offsets[i] = addr - base_addr;
+	}
+
+	// create type
+	MPI_Datatype col_type;
+	MPI_Type_create_struct(nx_local, block_lengths, offsets, types, &col_type);
+	MPI_Type_commit(&col_type);
+}
+
+// for compatibility, not strictly necessary since row data is already contiguous
+void create_row_datatype(double** data, int ny_local, int row) {
+	// number of elements in the block
+	int block_lengths[1] = { ny_local };
+	// datatype of each element
+	MPI_Datatype types[1] = { MPI_Double };
+	// byte offset to reach this block from anchor address
+	MPI_Aint offsets[1] = { 0 };
+
+	// create type
+	MPI_Datatype row_type;
+	MPI_Type_create_struct(1, block_lengths, offsets, types, &row_type);
+	MPI_Type_commit(&row_type);
+}
+
 void set_pressure_BCs(void) {
     // No slip over top and bottom walls, so zero normal gradient for pressure
     // Apply if processes top or bottom
