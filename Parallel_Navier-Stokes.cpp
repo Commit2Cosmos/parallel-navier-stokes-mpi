@@ -18,8 +18,8 @@ int rank_row, rank_col;
 // mpi processes in x/y dir
 int px, py;
 
-const int Nx = 101;
-const int Ny = 51;
+const int Nx = 102;
+const int Ny = 52;
 
 const double Lx = 0.1, Ly = 0.05;
 const double rho = 1000, nu = 1e-6;
@@ -131,99 +131,78 @@ void setup_decomposition(void)
 	j_start = 1 + rank_row*base_y + min(rem_y, rank_row);
 }
 
-MPI_Datatype create_column_datatype(double** data, int col) {
-	// number of elements in the block
-	int block_lengths[nx_local];
-	// datatype of each element
-	MPI_Datatype types[nx_local];
-	// byte offset to reach this block from anchor address
-	MPI_Aint offsets[nx_local];
+MPI_Datatype create_row_datatype(double** data, int j_fixed)
+{
+    vector<int> block_lengths(nx_local, 1);
+    vector<MPI_Datatype> types(nx_local, MPI_DOUBLE);
+    vector<MPI_Aint> offsets(nx_local);
 
-	// anchor address == address of first interior row
-	MPI_Aint base_addr;
-    MPI_Get_address(data[1], &base_addr);
+    MPI_Aint base_addr;
+    MPI_Get_address(&data[1][0], &base_addr);
 
-	// loop over 
-	for (int i = 0; i < nx_local; i++) {
-		block_lengths[i] = 1;
-		types[i] = MPI_DOUBLE;
+    for (int i = 1; i <= nx_local; i++) {
+        MPI_Aint addr;
+        MPI_Get_address(&data[i][j_fixed], &addr);
+        offsets[i - 1] = addr - base_addr;
+    }
 
-		MPI_Aint addr;
-    	MPI_Get_address(&data[i+1][col], &addr);
-
-		offsets[i] = addr - base_addr;
-	}
-
-	// create type
-	MPI_Datatype col_type;
-	MPI_Type_create_struct(nx_local, block_lengths, offsets, types, &col_type);
-	MPI_Type_commit(&col_type);
-	return col_type;
+    MPI_Datatype face_type;
+    MPI_Type_create_struct(nx_local, block_lengths.data(),
+                           offsets.data(), types.data(), &face_type);
+    MPI_Type_commit(&face_type);
+    return face_type;
 }
 
-// for compatibility, not strictly necessary since row data is already contiguous
-MPI_Datatype create_row_datatype() {
-	// number of elements in the block
-	int block_lengths[1] = { ny_local };
-	// datatype of each element
-	MPI_Datatype types[1] = { MPI_DOUBLE };
-	// byte offset to reach this block from anchor address
-	MPI_Aint offsets[1] = { 0 };
-
-	// create type
-	MPI_Datatype row_type;
-	MPI_Type_create_struct(1, block_lengths, offsets, types, &row_type);
-	MPI_Type_commit(&row_type);
-	return row_type;
-}
-
-void exchange(double** data) {
-	int left = (rank_col > 0) ? rank_row * px + (rank_col - 1) : MPI_PROC_NULL;
+void exchange(double** data)
+{
+    int left = (rank_col > 0) ? rank_row * px + (rank_col - 1) : MPI_PROC_NULL;
     int right = (rank_col < px - 1) ? rank_row * px + (rank_col + 1) : MPI_PROC_NULL;
     int bottom = (rank_row > 0) ? (rank_row - 1) * px + rank_col : MPI_PROC_NULL;
     int top = (rank_row < py - 1) ? (rank_row + 1) * px + rank_col : MPI_PROC_NULL;
 
-	MPI_Datatype send_left = create_column_datatype(data, 1);
-    MPI_Datatype send_right = create_column_datatype(data, nx_local);
-    MPI_Datatype recv_left = create_column_datatype(data, 0);
-    MPI_Datatype recv_right = create_column_datatype(data, nx_local+1);
-	
-	// only need 1 row type for all communications
-	MPI_Datatype row_type = create_row_datatype();
-	
-	MPI_Request reqs[8];
-	int count = 0;
-    int tag = 0;
+    MPI_Request reqs[8];
+    int count = 0;
 
-	// Recvs
-	// left
-	MPI_Irecv(data[1], 1, recv_left, left, tag, MPI_COMM_WORLD, &reqs[count++]);
-	// right
-	MPI_Irecv(data[1], 1, recv_right, right, tag, MPI_COMM_WORLD, &reqs[count++]);
-	// bottom
-	MPI_Irecv(&data[0][1], 1, row_type, bottom, tag, MPI_COMM_WORLD, &reqs[count++]);
-	// top
-	MPI_Irecv(&data[ny_local+1][1], 1, row_type, top, tag, MPI_COMM_WORLD, &reqs[count++]);
-	
-	// Sends
-	// left
-	MPI_Isend(data[1], 1, send_left, left, tag, MPI_COMM_WORLD, &reqs[count++]);
-	// right
-	MPI_Isend(data[1], 1, send_right, right, tag, MPI_COMM_WORLD, &reqs[count++]);
-	// bottom
-	MPI_Isend(&data[1][1], 1, row_type, bottom, tag, MPI_COMM_WORLD, &reqs[count++]);
-	// top
-	MPI_Isend(&data[ny_local][1], 1, row_type, top, tag, MPI_COMM_WORLD, &reqs[count++]);
+    MPI_Datatype recv_bottom_type = create_row_datatype(data, 0);
+    MPI_Datatype recv_top_type = create_row_datatype(data, ny_local + 1);
+    MPI_Datatype send_bottom_type = create_row_datatype(data, 1);
+    MPI_Datatype send_top_type = create_row_datatype(data, ny_local);
 
-	// wait for all
-	MPI_Waitall(8, reqs, MPI_STATUSES_IGNORE);
+	int tag = 0;
+    // Receive ghost cells
 
-    // Free all types
-    MPI_Type_free(&send_left);
-	MPI_Type_free(&recv_left);
-    MPI_Type_free(&send_right);
-	MPI_Type_free(&recv_right);
-    MPI_Type_free(&row_type);
+    // left ghost column: x = 0, y = 1..ny_local
+    MPI_Irecv(&data[0][1], ny_local, MPI_DOUBLE, left, tag, MPI_COMM_WORLD, &reqs[count++]);
+
+    // right ghost column: x = nx_local+1, y = 1..ny_local
+    MPI_Irecv(&data[nx_local + 1][1], ny_local, MPI_DOUBLE, right, tag, MPI_COMM_WORLD, &reqs[count++]);
+
+    // bottom ghost row: y = 0, x = 1..nx_local
+    MPI_Irecv(&data[1][0], 1, recv_bottom_type, bottom, tag, MPI_COMM_WORLD, &reqs[count++]);
+
+    // top ghost row: y = ny_local+1, x = 1..nx_local
+    MPI_Irecv(&data[1][ny_local + 1], 1, recv_top_type, top, tag, MPI_COMM_WORLD, &reqs[count++]);
+
+    // Send interior boundary cells
+
+    // send left interior column: x = 1, y = 1..ny_local
+    MPI_Isend(&data[1][1], ny_local, MPI_DOUBLE, left, tag, MPI_COMM_WORLD, &reqs[count++]);
+
+    // send right interior column: x = nx_local, y = 1..ny_local
+    MPI_Isend(&data[nx_local][1], ny_local, MPI_DOUBLE, right, tag, MPI_COMM_WORLD, &reqs[count++]);
+
+    // send bottom interior row: y = 1, x = 1..nx_local
+    MPI_Isend(&data[1][1], 1, send_bottom_type, bottom, tag, MPI_COMM_WORLD, &reqs[count++]);
+
+    // send top interior row: y = ny_local, x = 1..nx_local
+    MPI_Isend(&data[1][ny_local], 1, send_top_type, top, tag, MPI_COMM_WORLD, &reqs[count++]);
+
+    MPI_Waitall(count, reqs, MPI_STATUSES_IGNORE);
+
+    MPI_Type_free(&recv_bottom_type);
+    MPI_Type_free(&recv_top_type);
+    MPI_Type_free(&send_bottom_type);
+    MPI_Type_free(&send_top_type);
 }
 
 void set_pressure_BCs(void) {
@@ -305,7 +284,7 @@ int pressure_poisson_jacobi(double rtol = 1.e-5)
 		it++;
 
 		//Jacobi iteration
-		for (int i = 1; i <= nx_local; i++)
+		for (int i = 1; i <= nx_local; i++) {
 			for (int j = 1; j <= ny_local; j++)
 			{
 				P[i][j] = 1.0 / (2.0 + 2.0 * (dx * dx) / (dy * dy)) * (P_old[i + 1][j] + P_old[i - 1][j] + 
@@ -315,10 +294,15 @@ int pressure_poisson_jacobi(double rtol = 1.e-5)
 				sum_val += fabs(P[i][j]);
 				tol += fabs(P[i][j] - P_old[i][j]);
 			}
+		}
 
 		set_pressure_BCs();
 
-		tol = tol / max(1.e-10, sum_val);
+		double local_vals[2] = {tol, sum_val};
+		double global_vals[2];
+		MPI_Allreduce(local_vals, global_vals, 2, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+		
+		tol = global_vals[0] / max(1.e-10, global_vals[1]);
 	}
 
 	return it;
@@ -394,7 +378,7 @@ void solve_NS(void)
 	int out_it = 0;
 	double t_out = dt_out;
 
-	grids_to_file(out_it);
+	// grids_to_file(out_it);
 
 	while (t < t_end)
 	{
@@ -414,20 +398,34 @@ void solve_NS(void)
 
 		calculate_intermediate_velocity();
 
+		// communicate velocities, since were updated by calculate_intermediate_velocity
 		exchange(u);
 		exchange(v);
 
 		calculate_ppm_RHS_central();
 		its = pressure_poisson_jacobi(1.e-5);
-		vel_max = project_velocity();
+
+		// communicate pressure, since was updated by pressure_poisson_jacobi
+		exchange(P);
+
+		// reduce max velocity
+		double local_vmax = project_velocity();
+		MPI_Allreduce(&local_vmax, &vel_max, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+
 		set_velocity_BCs();
+
+		// communicate u, since was updated by set_velocity_BCs
+		exchange(u);
 
 		if (t >= t_out)
 		{
 			out_it++;
 			t_out += dt_out;
-			cout << time_it << ": " << t << " Jacobi iterations: " << its << " vel_max: " << vel_max << endl;
-			grids_to_file(out_it);
+			// grids_to_file(out_it);
+
+			if (id == 0) {
+				cout << time_it << ": " << t << " Jacobi iterations: " << its << ", vel_max: " << vel_max << endl;
+			}
 		}
 	}
 }
@@ -450,9 +448,11 @@ int main(int argc, char *argv[])
 	MPI_Comm_size(MPI_COMM_WORLD, &p);
 
     setup_decomposition();
+	// cout << "id " << id << " nx_local " << nx_local << " ny_local: " << ny_local << endl;
+	// cout << "rank_row: " << rank_row << endl;
+	// cout << "rank_col:" << rank_col << endl;
     setup();
 	solve_NS();
-
 	free_memory();
 
     MPI_Finalize();
