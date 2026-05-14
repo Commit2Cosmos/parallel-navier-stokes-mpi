@@ -1,4 +1,5 @@
 #include <mpi.h>
+#include "hdf5.h"
 #include <iostream>
 #include <sstream>
 #include <fstream>
@@ -18,8 +19,8 @@ int rank_row, rank_col;
 // mpi processes in x/y dir
 int px, py;
 
-const int Nx = 32;
-const int Ny = 18;
+const int Nx = 102;
+const int Ny = 102;
 
 const double Lx = 0.1, Ly = 0.05;
 const double rho = 1000, nu = 1e-6;
@@ -40,6 +41,165 @@ double* v_1d, *v_old_1d;
 double* PPrhs_1d;
 
 double dx, dy, dt, t;
+
+static void h5_check(herr_t status, const char* msg)
+{
+    if (status < 0) {
+        std::cerr << "Rank " << id << " HDF5 error: " << msg << std::endl;
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+}
+
+static void write_double_attr_collective(hid_t loc, const char* name, double val)
+{
+    hid_t sp = H5Screate(H5S_SCALAR);
+    hid_t at = H5Acreate2(loc, name, H5T_NATIVE_DOUBLE, sp, H5P_DEFAULT, H5P_DEFAULT);
+    h5_check(at, name);
+    h5_check(H5Awrite(at, H5T_NATIVE_DOUBLE, &val), name);
+    H5Aclose(at);
+    H5Sclose(sp);
+}
+
+static void write_int_attr_collective(hid_t loc, const char* name, int val)
+{
+    hid_t sp = H5Screate(H5S_SCALAR);
+    hid_t at = H5Acreate2(loc, name, H5T_NATIVE_INT, sp, H5P_DEFAULT, H5P_DEFAULT);
+    h5_check(at, name);
+    h5_check(H5Awrite(at, H5T_NATIVE_INT, &val), name);
+    H5Aclose(at);
+    H5Sclose(sp);
+}
+
+void grids_to_file(int outit)
+{
+    hid_t fapl = H5Pcreate(H5P_FILE_ACCESS);
+    h5_check(fapl, "H5Pcreate(H5P_FILE_ACCESS)");
+    h5_check(H5Pset_fapl_mpio(fapl, MPI_COMM_WORLD, MPI_INFO_NULL), "H5Pset_fapl_mpio");
+
+    hid_t file_id;
+    if (outit == 0) {
+        file_id = H5Fcreate("fields.h5", H5F_ACC_TRUNC, H5P_DEFAULT, fapl);
+        h5_check(file_id, "H5Fcreate(fields.h5)");
+    } else {
+        file_id = H5Fopen("fields.h5", H5F_ACC_RDWR, fapl);
+        h5_check(file_id, "H5Fopen(fields.h5)");
+    }
+    H5Pclose(fapl);
+
+    // Create geometry once, collectively, on first output
+    if (outit == 0) {
+        hid_t geo_grp = H5Gcreate2(file_id, "/geometry",
+                                   H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+        h5_check(geo_grp, "H5Gcreate2(/geometry)");
+
+        std::vector<double> xcoords(Nx), ycoords(Ny);
+        for (int i = 0; i < Nx; i++) xcoords[i] = i * dx;
+        for (int j = 0; j < Ny; j++) ycoords[j] = j * dy;
+
+        hsize_t dimx[1] = {static_cast<hsize_t>(Nx)};
+        hsize_t dimy[1] = {static_cast<hsize_t>(Ny)};
+        hid_t sp_x = H5Screate_simple(1, dimx, NULL);
+        hid_t sp_y = H5Screate_simple(1, dimy, NULL);
+
+        hid_t ds_x = H5Dcreate2(geo_grp, "x_coords", H5T_NATIVE_DOUBLE,
+                                sp_x, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+        hid_t ds_y = H5Dcreate2(geo_grp, "y_coords", H5T_NATIVE_DOUBLE,
+                                sp_y, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+        h5_check(ds_x, "H5Dcreate2(x_coords)");
+        h5_check(ds_y, "H5Dcreate2(y_coords)");
+
+        // Dataset writes may be collective or independent; collective keeps ranks aligned
+        hid_t dxpl_meta = H5Pcreate(H5P_DATASET_XFER);
+        h5_check(dxpl_meta, "H5Pcreate(H5P_DATASET_XFER)");
+        h5_check(H5Pset_dxpl_mpio(dxpl_meta, H5FD_MPIO_COLLECTIVE), "H5Pset_dxpl_mpio geometry");
+
+        h5_check(H5Dwrite(ds_x, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, dxpl_meta, xcoords.data()),
+                 "H5Dwrite(x_coords)");
+        h5_check(H5Dwrite(ds_y, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, dxpl_meta, ycoords.data()),
+                 "H5Dwrite(y_coords)");
+
+        H5Pclose(dxpl_meta);
+
+        write_double_attr_collective(geo_grp, "Lx", Lx);
+        write_double_attr_collective(geo_grp, "Ly", Ly);
+        write_double_attr_collective(geo_grp, "rho", rho);
+        write_double_attr_collective(geo_grp, "nu", nu);
+        write_int_attr_collective(geo_grp, "Nx", Nx);
+        write_int_attr_collective(geo_grp, "Ny", Ny);
+
+        H5Dclose(ds_x);
+        H5Dclose(ds_y);
+        H5Sclose(sp_x);
+        H5Sclose(sp_y);
+        H5Gclose(geo_grp);
+    }
+
+    char grpname[32];
+    std::snprintf(grpname, sizeof(grpname), "/step_%04d", outit);
+
+    hid_t step_grp = H5Gcreate2(file_id, grpname,
+                                H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    h5_check(step_grp, "H5Gcreate2(step)");
+
+    write_double_attr_collective(step_grp, "time", t);
+    write_double_attr_collective(step_grp, "dt", dt);
+    write_int_attr_collective(step_grp, "output_index", outit);
+
+    auto write_field = [&](const char* name, double** field) {
+        hsize_t gdims[2] = {
+            static_cast<hsize_t>(Ny - 2),
+            static_cast<hsize_t>(Nx - 2)
+        };
+        hid_t filespace = H5Screate_simple(2, gdims, NULL);
+
+        hid_t dset = H5Dcreate2(step_grp, name, H5T_NATIVE_DOUBLE,
+                                filespace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+        h5_check(dset, name);
+
+        hsize_t offset[2] = {
+            static_cast<hsize_t>(j_start - 1),
+            static_cast<hsize_t>(i_start - 1)
+        };
+        hsize_t count[2] = {
+            static_cast<hsize_t>(ny_local),
+            static_cast<hsize_t>(nx_local)
+        };
+
+        h5_check(H5Sselect_hyperslab(filespace, H5S_SELECT_SET, offset, NULL, count, NULL),
+                "H5Sselect_hyperslab");
+
+        std::vector<double> buf(static_cast<size_t>(nx_local) * static_cast<size_t>(ny_local));
+        for (int j = 1; j <= ny_local; ++j) {
+            for (int i = 1; i <= nx_local; ++i) {
+                buf[(j - 1) * nx_local + (i - 1)] = field[i][j];
+            }
+        }
+
+        hsize_t memdims[2] = {
+            static_cast<hsize_t>(ny_local),
+            static_cast<hsize_t>(nx_local)
+        };
+        hid_t memspace = H5Screate_simple(2, memdims, NULL);
+
+        hid_t dxpl = H5Pcreate(H5P_DATASET_XFER);
+        h5_check(dxpl, "H5Pcreate(H5P_DATASET_XFER)");
+        h5_check(H5Pset_dxpl_mpio(dxpl, H5FD_MPIO_COLLECTIVE), "H5Pset_dxpl_mpio field");
+
+        h5_check(H5Dwrite(dset, H5T_NATIVE_DOUBLE, memspace, filespace, dxpl, buf.data()), name);
+
+        H5Pclose(dxpl);
+        H5Sclose(memspace);
+        H5Sclose(filespace);
+        H5Dclose(dset);
+    };
+
+    write_field("P", P);
+    write_field("u", u);
+    write_field("v", v);
+
+    H5Gclose(step_grp);
+    H5Fclose(file_id);
+}
 
 void setup_continuous_array(double**& array_2d, double*& array_1d, int m, int n)
 {
@@ -353,7 +513,7 @@ void solve_NS(void)
 	int out_it = 0;
 	double t_out = dt_out;
 
-	// TODO: save here 
+	grids_to_file(out_it);
 
 	while (t < t_end)
 	{
