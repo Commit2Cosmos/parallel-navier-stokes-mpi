@@ -3,6 +3,7 @@ import h5py
 import imageio.v2 as imageio
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib import colors
 
 filename = "fields.h5"
 gif_name = "fields_evolution.gif"
@@ -11,56 +12,77 @@ with h5py.File(filename, "r") as f:
     x = f["/geometry/x_coords"][:]
     y = f["/geometry/y_coords"][:]
 
-    x_in = x[1:-1]
-    y_in = y[1:-1]
+    step_names = sorted(name for name in f.keys() if name.startswith("step_"))
 
-    step_names = sorted([name for name in f.keys() if name.startswith("step_")])
+    extent = [x.min(), x.max(), y.min(), y.max()]
+    X, Y = np.meshgrid(x, y)
 
-    extent = [x_in.min(), x_in.max(), y_in.min(), y_in.max()]
+    arrow_stride = max(1, min(len(x), len(y)) // 24)
 
-    # Pre-scan for stable color limits across all frames
-    pmin, pmax = np.inf, -np.inf
-    umin, umax = np.inf, -np.inf
     smin, smax = np.inf, -np.inf
+    max_speed = 0.0
 
     for step in step_names:
-        P = f[f"{step}/P"][:]
-        u = f[f"{step}/u"][:]
-        v = f[f"{step}/v"][:]
+        u = np.asarray(f[f"{step}/u"][:], dtype=float)
+        v = np.asarray(f[f"{step}/v"][:], dtype=float)
         speed = np.sqrt(u**2 + v**2)
 
-        pmin = min(pmin, np.nanmin(P))
-        pmax = max(pmax, np.nanmax(P))
-        umin = min(umin, np.nanmin(u))
-        umax = max(umax, np.nanmax(u))
-        smin = min(smin, np.nanmin(speed))
-        smax = max(smax, np.nanmax(speed))
+        finite_speed = speed[np.isfinite(speed)]
+        if finite_speed.size:
+            smin = min(smin, finite_speed.min())
+            smax = max(smax, finite_speed.max())
+            max_speed = max(max_speed, finite_speed.max())
+
+    if not np.isfinite(smin) or not np.isfinite(smax):
+        smin, smax = 0.0, 1.0
+    elif np.isclose(smin, smax):
+        eps = max(1e-12, 1e-6 * max(1.0, abs(smin)))
+        smin -= eps
+        smax += eps
+
+    norm = colors.Normalize(vmin=smin, vmax=smax)
+    quiver_scale = max(max_speed, 1e-12) / 0.008
 
     frames = []
 
     for step in step_names:
         grp = f[step]
-        P = grp["P"][:]
-        u = grp["u"][:]
-        v = grp["v"][:]
+        u = np.asarray(grp["u"][:], dtype=float)
+        v = np.asarray(grp["v"][:], dtype=float)
         speed = np.sqrt(u**2 + v**2)
         time = grp.attrs["time"]
 
-        fig, axes = plt.subplots(1, 2, figsize=(14, 4), constrained_layout=True)
+        fig, ax = plt.subplots(figsize=(7, 4.8), constrained_layout=True)
 
-        im0 = axes[0].imshow(P, origin="lower", extent=extent,
-                             vmin=pmin, vmax=pmax, cmap="viridis")
-        axes[0].set_title(f"Pressure P\nt = {time:.3f}")
-        axes[0].set_xlabel("x")
-        axes[0].set_ylabel("y")
-        fig.colorbar(im0, ax=axes[0])
+        im = ax.imshow(speed, origin="lower", extent=extent, norm=norm, cmap="viridis")
+        
+        uu = np.where(np.isfinite(u), u, 0.0)
+        vv = np.where(np.isfinite(v), v, 0.0)
+        mask = np.isfinite(u) & np.isfinite(v)
 
-        im1 = axes[1].imshow(speed, origin="lower", extent=extent,
-                             vmin=smin, vmax=smax, cmap="magma")
-        axes[1].set_title("Speed |v|")
-        axes[1].set_xlabel("x")
-        axes[1].set_ylabel("y")
-        fig.colorbar(im1, ax=axes[1])
+        plot_stride = arrow_stride * 2
+
+        ax.quiver(
+            X[::plot_stride, ::plot_stride],
+            Y[::plot_stride, ::plot_stride],
+            uu[::plot_stride, ::plot_stride],
+            vv[::plot_stride, ::plot_stride],
+            mask[::plot_stride, ::plot_stride],
+            cmap="gray",
+            clim=(0, 1),
+            pivot="mid",
+            angles="xy",
+            scale_units="xy",
+            scale=quiver_scale,
+            width=0.003,
+            minlength=0,
+            alpha=0.6,
+        )
+
+        ax.set_title(f"Speed |v| with velocity arrows\nt = {time:.3f}")
+        ax.set_xlabel("x (m)")
+        ax.set_ylabel("y (m)")
+        fig.colorbar(im, ax=ax, label="|u| (m/s)")
 
         buf = io.BytesIO()
         fig.savefig(buf, format="png", dpi=120)
