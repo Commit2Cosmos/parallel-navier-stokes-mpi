@@ -19,8 +19,8 @@ int rank_row, rank_col;
 // mpi processes in x/y dir
 int px, py;
 
-const int Nx = 102;
-const int Ny = 52;
+const int Nx = 202;
+const int Ny = 102;
 
 const double Lx = 0.1, Ly = 0.05;
 const double rho = 1000, nu = 1e-6;
@@ -330,7 +330,6 @@ void exchange(double** data)
     MPI_Irecv(&data[1][ny_local + 1], 1, recv_top_type, top, 3, MPI_COMM_WORLD, &reqs[count++]);
 
     // Send interior boundary cells
-
     // send left interior column: x = 1, y = 1..ny_local
     MPI_Isend(&data[1][1], ny_local, MPI_DOUBLE, left, 1, MPI_COMM_WORLD, &reqs[count++]);
 
@@ -411,11 +410,31 @@ void setup(void)
 
 void calculate_ppm_RHS_central(void)
 {
-	for (int i = 1; i <= nx_local; i++)
-		for (int j = 1; j <= ny_local; j++)
-		{
-			PPrhs[i][j] = rho / dt * ((u[i + 1][j] - u[i - 1][j]) / (2. * dx) + (v[i][j + 1] - v[i][j - 1]) / (2. * dy));
-		}
+    for (int i = 1; i <= nx_local; i++) {
+        for (int j = 1; j <= ny_local; j++) {
+            int ig = i_start + (i - 1);
+            int jg = j_start + (j - 1);
+
+            if (ADD_OBSTACLE && is_obstacle(ig, jg)) {
+                PPrhs[i][j] = 0.0;
+                continue;
+            }
+
+            double uxp = u[i + 1][j];
+            double uxm = u[i - 1][j];
+            double vyp = v[i][j + 1];
+            double vym = v[i][j - 1];
+
+            if (ADD_OBSTACLE) {
+                if (is_obstacle(ig + 1, jg)) uxp = u[i][j];
+                if (is_obstacle(ig - 1, jg)) uxm = u[i][j];
+                if (is_obstacle(ig, jg + 1)) vyp = v[i][j];
+                if (is_obstacle(ig, jg - 1)) vym = v[i][j];
+            }
+
+            PPrhs[i][j] = rho / dt * ((uxp - uxm) / (2.0 * dx) + (vyp - vym) / (2.0 * dy));
+        }
+    }
 }
 
 
@@ -532,8 +551,21 @@ double project_velocity(void)
 	for (int i = 1; i <= nx_local; i++)
 		for (int j = 1; j <= ny_local; j++)
 		{
-			u[i][j] = u[i][j] - dt * (1. / rho) * (P[i + 1][j] - P[i - 1][j]) / (2. * dx);
-			v[i][j] = v[i][j] - dt * (1. / rho) * (P[i][j + 1] - P[i][j - 1]) / (2. * dy);
+            double Pxp = P[i+1][j], Pxm = P[i-1][j];
+            double Pyp = P[i][j+1], Pym = P[i][j-1];
+
+            if (ADD_OBSTACLE) {
+                int ig = i_start + (i - 1);
+                int jg = j_start + (j - 1);
+
+                if (is_obstacle(ig + 1, jg)) Pxp = P[i][j];
+                if (is_obstacle(ig - 1, jg)) Pxm = P[i][j];
+                if (is_obstacle(ig, jg + 1)) Pyp = P[i][j];
+                if (is_obstacle(ig, jg - 1)) Pym = P[i][j];
+            }
+
+            u[i][j] -= dt * (1. / rho) * (Pxp - Pxm) / (2. * dx);
+            v[i][j] -= dt * (1. / rho) * (Pyp - Pym) / (2. * dy);
 
 			double vel = sqrt(u[i][j] * u[i][j] + v[i][j] * v[i][j]);
 
