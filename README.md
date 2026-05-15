@@ -35,4 +35,4 @@ python3 visualise.py
 - A custom MPI datatype is used to package non-contiguous boundary data for communication.
 - `MPI_Allreduce` is used for communicating the maximum velocity (so all processes use the dase minimum timestep value) and tolerance (so each process runs the same number of jacobi iterations).
 - `PERIODIC_BC` provides a toggle for making the top and bottom boundaries periodic.
-- `ADD_OBSTACLE` provides a toggle for placing an obstacle inside the domain.
+- `ADD_OBSTACLE` provides a toggle for placing an obstacle inside the domain. The dimensions and location of the obstacle can be modified with `OBS_I_MIN, OBS_I_MAX, OBS_J_MIN, OBS_J_MAX` variables.

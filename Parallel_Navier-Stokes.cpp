@@ -42,13 +42,14 @@ double* PPrhs_1d;
 
 double dx, dy, dt, t;
 
-//* */ Obstacle handling **************
+//* Obstacle handling **************
 const bool ADD_OBSTACLE = false;
 const int OBS_I_MIN = Nx * 0.50;
 const int OBS_I_MAX = Nx * 0.55;
 const int OBS_J_MIN = Ny * 0.3;
 const int OBS_J_MAX = Ny * 0.4;
 
+// Check whether a global grid cell lies inside the rectangular obstacle
 inline bool is_obstacle(int i_global, int j_global) {
     return i_global >= OBS_I_MIN && i_global <= OBS_I_MAX &&
            j_global >= OBS_J_MIN && j_global <= OBS_J_MAX;
