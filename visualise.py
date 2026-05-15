@@ -15,7 +15,10 @@ with h5py.File(filename, "r") as f:
     step_names = sorted(name for name in f.keys() if name.startswith("step_"))
 
     extent = [x.min(), x.max(), y.min(), y.max()]
-    X, Y = np.meshgrid(x, y)
+
+    x_plot = x[1:-1]
+    y_plot = y[1:-1]
+    X, Y = np.meshgrid(x_plot, y_plot)
 
     arrow_stride = max(1, min(len(x), len(y)) // 24)
 
