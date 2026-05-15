@@ -55,6 +55,10 @@ inline bool is_obstacle(int i_global, int j_global) {
 }
 // *******************
 
+//* Periodic top/bottom toggle ********
+const bool PERIODIC_BC = false;
+//*************
+
 static void h5_check(herr_t status, const char* msg)
 {
     if (status < 0) {
@@ -293,8 +297,15 @@ void exchange(double** data)
 {
     int left = (rank_col > 0) ? rank_row * px + (rank_col - 1) : MPI_PROC_NULL;
     int right = (rank_col < px - 1) ? rank_row * px + (rank_col + 1) : MPI_PROC_NULL;
-    int bottom = (rank_row > 0) ? (rank_row - 1) * px + rank_col : MPI_PROC_NULL;
-    int top = (rank_row < py - 1) ? (rank_row + 1) * px + rank_col : MPI_PROC_NULL;
+    int bottom, top;
+
+    if (PERIODIC_BC) {
+        bottom = ((rank_row - 1 + py) % py) * px + rank_col;
+        top = ((rank_row + 1) % py) * px + rank_col;
+    } else {
+        bottom = (rank_row > 0) ? (rank_row - 1) * px + rank_col : MPI_PROC_NULL;
+        top = (rank_row < py - 1) ? (rank_row + 1) * px + rank_col : MPI_PROC_NULL;
+    }
 
     MPI_Request reqs[8];
     int count = 0;
@@ -342,12 +353,13 @@ void exchange(double** data)
 
 void set_pressure_BCs(void) {
     // No slip over top and bottom walls, so zero normal gradient for pressure
-    // Apply if processes top or bottom
-    if (j_start == 1)
+    // If processes bottom
+    if (j_start == 1 && !PERIODIC_BC)
         for (int i = 1; i <= nx_local; i++)
 			P[i][0] = P[i][1];
 
-    if (j_start + ny_local == Ny - 1)
+    // If processes bottom
+    if (j_start + ny_local == Ny - 1 && !PERIODIC_BC)
         for (int i = 1; i <= nx_local; i++)
 			P[i][ny_local + 1] = P[i][ny_local];
 
