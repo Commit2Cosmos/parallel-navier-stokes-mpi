@@ -82,10 +82,10 @@ with h5py.File(filename, "r") as f:
             alpha=0.6,
         )
 
-        ax.set_title(f"Speed |v| with velocity arrows\nt = {time:.3f}")
+        ax.set_title(f"Velocity field \nt = {time:.3f}")
         ax.set_xlabel("x (m)")
         ax.set_ylabel("y (m)")
-        fig.colorbar(im, ax=ax, label="|u| (m/s)")
+        fig.colorbar(im, ax=ax, label="Velocity magnitude (m/s)")
 
         buf = io.BytesIO()
         fig.savefig(buf, format="png", dpi=120)

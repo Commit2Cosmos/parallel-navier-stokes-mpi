@@ -43,7 +43,7 @@ double* PPrhs_1d;
 double dx, dy, dt, t;
 
 //* Obstacle handling **************
-const bool ADD_OBSTACLE = false;
+const bool ADD_OBSTACLE = true;
 const int OBS_I_MIN = Nx * 0.50;
 const int OBS_I_MAX = Nx * 0.55;
 const int OBS_J_MIN = Ny * 0.3;
@@ -57,7 +57,7 @@ inline bool is_obstacle(int i_global, int j_global) {
 // *******************
 
 //* Periodic top/bottom toggle ********
-const bool PERIODIC_BC = false;
+const bool PERIODIC_BC = true;
 //*************
 
 // Abortы the MPI program if an HDF5 call reports an error

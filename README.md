@@ -17,7 +17,7 @@ Run the solver with 4 MPI processes:
 mpiexec -n 4 ./pns
 ```
 
-This produces the simulation output (fields.h5 file) used by the post-processing stage. The file contains the field values of each process per saved timestep. The reconstruction is achieved while writing to the HFD5 hyperslab (using metadata, such as offset and local count, so local tiles are placed correctly inside the global dataset). The ghost nodes are not saved.
+The solver writes output to a single shared fields.h5 file using parallel HDF5. At each output step, every MPI process writes its local interior block of P, u, and v into the correct location of a global dataset by using hyperslab offsets and local block sizes derived from the domain decomposition. Because each local tile is inserted into its global position during writing, the full field is reconstructed automatically in the file and no separate gather or merge stage is required.
 
 The domain size (width and height), as well as the number of nodes in x- and y-directions is adjustable via `Nx, Ny, Lx, Ly` parameters.
 
@@ -28,11 +28,13 @@ Run the Python visualisation script to create a GIF of the velocity field evolut
 python3 visualise.py
 ```
 
+A pre-generated animation is included as `fields_evolution.gif`.
+
 ## Extensions and improvements
 
-- Field arrays were changed to contiguous storage to improve memory locality and simplify communication handling.
-- Rectangular grid decomposition is used for any number of processes, with tiles chosen to stay as close as possible to the aspect ratio of the full domain.
-- A custom MPI datatype is used to package non-contiguous boundary data for communication.
-- `MPI_Allreduce` is used for communicating the maximum velocity (so all processes use the dase minimum timestep value) and tolerance (so each process runs the same number of jacobi iterations).
-- `PERIODIC_BC` provides a toggle for making the top and bottom boundaries periodic.
-- `ADD_OBSTACLE` provides a toggle for placing an obstacle inside the domain. The dimensions and location of the obstacle can be modified with `OBS_I_MIN, OBS_I_MAX, OBS_J_MIN, OBS_J_MAX` variables.
+- Field arrays are stored in contiguous memory blocks with a 2D indexing interface to improve cache locality.
+- A rectangular 2D domain decomposition is used for any number of MPI processes, with the process grid chosen to keep subdomains close to the aspect ratio of the full domain.
+- A custom MPI derived datatype is used to communicate non-contiguous boundary rows directly from memory.
+- MPI_Allreduce is used to compute global values such as the maximum velocity for timestep control, and the pressure-solver residual for Jacobi convergence to keep all processes synchronized.
+- PERIODIC_BC provides a switch for periodic top and bottom boundaries by wrapping halo communication between the first and last process rows.
+- ADD_OBSTACLE provides a switch for inserting a rectangular internal obstacle, with size and position controlled by `OBS_I_MIN`, `OBS_I_MAX`, `OBS_J_MIN`, and `OBS_J_MAX`.
