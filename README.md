@@ -1,14 +1,35 @@
-# PPP MPI Assessment
+# Parallel Navier-Stokes: Compile, Run, and Extensions
 
-Your submission deadline is **5pm BST on Friday 15th May 2026**.
+## Compile
+Use the following command on the target system:
 
-Your code must be uploaded in this GitHub classroom repository under the `ese-ada-lovelace-2025` organization before then.
+```bash
+mpicxx -O2 -o pns Parallel_Navier-Stokes.cpp \
+  -I/opt/homebrew/opt/hdf5-mpi/include \
+  -L/opt/homebrew/opt/hdf5-mpi/lib \
+  -lhdf5 -lm
+```
 
-## Task
+## Run simulation
+Run the solver with 4 MPI processes:
 
-You will be solving the same set of equations that you did for the Modelling and 
-Numerical Methods (MNM) coursework, this time converting a single-core implementation into a parallel one using MPI.
+```bash
+mpiexec -n 4 ./pns
+```
 
-Please see the [Coursework Brief](./Coursework_Assignment.pdf) for a full description of the task, including the equations you will be solving and the expected output, as well as advice on commit pattern and submission rules expected. 
+This produces the simulation output (fields.h5 file) used by the post-processing stage. The file contains the field values of each process per saved timestep. The reconstruction is achieved while writing to the HFD5 hyperslab (using metadata, such as offset and local count, so local tiles are placed correctly inside the global dataset). The ghost nodes are not saved
 
-Note in particular that you are expected to submit a **single header file** and **single source file** for the main simulation task (and optionally a second pair for the extension).
+## Run post-processing
+Run the Python visualisation script to create a GIF of the velocity field evolution:
+
+```bash
+python3 visualise.py
+```
+
+## Extensions and improvements
+
+- Field arrays were changed to contiguous storage to improve memory locality and simplify communication handling.
+- Rectangular grid decomposition is used for any number of processes, with tiles chosen to stay as close as possible to the aspect ratio of the full domain.
+- A custom MPI datatype is used to package non-contiguous boundary data for communication.
+- `PERIODIC_BC` provides a toggle for making the top and bottom boundaries periodic.
+- `ADD_OBSTACLE` provides a toggle for placing an obstacle inside the domain.
