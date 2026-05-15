@@ -20,7 +20,7 @@ int rank_row, rank_col;
 int px, py;
 
 const int Nx = 102;
-const int Ny = 102;
+const int Ny = 52;
 
 const double Lx = 0.1, Ly = 0.05;
 const double rho = 1000, nu = 1e-6;
@@ -42,6 +42,8 @@ double* PPrhs_1d;
 
 double dx, dy, dt, t;
 
+//* */ Obstacle handling **************
+const bool ADD_OBSTACLE = true;
 const int OBS_I_MIN = Nx * 0.50;
 const int OBS_I_MAX = Nx * 0.55;
 const int OBS_J_MIN = Ny * 0.3;
@@ -51,6 +53,7 @@ inline bool is_obstacle(int i_global, int j_global) {
     return i_global >= OBS_I_MIN && i_global <= OBS_I_MAX &&
            j_global >= OBS_J_MIN && j_global <= OBS_J_MAX;
 }
+// *******************
 
 static void h5_check(herr_t status, const char* msg)
 {
@@ -496,13 +499,16 @@ void set_velocity_BCs(void)
 		}
 	}
 
-    for (int i = 1; i <= nx_local; i++) {
-        for (int j = 1; j <= ny_local; j++) {
-            int ig = i_start + (i - 1);
-            int jg = j_start + (j - 1);
-            if (is_obstacle(ig, jg)) {
-                u[i][j] = 0.0;
-                v[i][j] = 0.0;
+    // obstacle handling: zero out velocities in obstacle region
+    if (ADD_OBSTACLE) {
+        for (int i = 1; i <= nx_local; i++) {
+            for (int j = 1; j <= ny_local; j++) {
+                int ig = i_start + (i - 1);
+                int jg = j_start + (j - 1);
+                if (is_obstacle(ig, jg)) {
+                    u[i][j] = 0.0;
+                    v[i][j] = 0.0;
+                }
             }
         }
     }
@@ -549,11 +555,11 @@ void solve_NS(void)
 		swap(u, u_old);
 		swap(v, v_old);
 
+        // communicate velocities, since were updated by the swap
 		exchange(u_old);
 		exchange(v_old);
 
 		calculate_intermediate_velocity();
-        set_velocity_BCs();
 
 		// communicate velocities, since were updated by calculate_intermediate_velocity
 		exchange(u);
@@ -571,8 +577,9 @@ void solve_NS(void)
 
 		set_velocity_BCs();
 
-		// communicate u, since was updated by set_velocity_BCs
+		// communicate u and v, since was updated by set_velocity_BCs
 		exchange(u);
+        exchange(v);
 
 		if (t >= t_out)
 		{
