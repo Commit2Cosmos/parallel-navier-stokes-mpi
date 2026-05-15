@@ -1,0 +1,48 @@
+#!/bin/bash
+#PBS -N pns_scaling
+#PBS -P NS_Parallel
+#PBS -l select=1:ncpus=64:mpiprocs=64
+#PBS -l walltime=00:30:00
+#PBS -j oe
+
+set -euo pipefail
+cd "$PBS_O_WORKDIR"
+
+echo "Job started on $(date)"
+echo "Working directory: $PBS_O_WORKDIR"
+echo "Node file: $PBS_NODEFILE"
+echo "Allocated cores: $(wc -l < "$PBS_NODEFILE")"
+
+module purge
+module load gompi
+module load HDF5
+module list
+
+mpicxx -O2 -o pns Parallel_Navier-Stokes.cpp -lhdf5 -lm
+
+PROCS_LIST="1 2 4 8 16 32 64"
+REPEATS=3
+OUTCSV="timings.csv"
+
+echo "processes,repeat,wall_seconds" > "$OUTCSV"
+
+for NP in $PROCS_LIST; do
+  echo "=== Testing with ${NP} MPI processes ==="
+
+  for REP in $(seq 1 $REPEATS); do
+    echo "Run NP=${NP}, repeat=${REP}"
+
+    rm -f fields.h5
+
+    ELAPSED=$(/usr/bin/time -f "%e" mpiexec -n "$NP" ./pns 2>&1 >/dev/null | tail -n 1)
+
+    echo "${NP},${REP},${ELAPSED}" >> "$OUTCSV"
+  done
+done
+
+echo
+echo "Benchmark complete."
+echo "Results written to $OUTCSV"
+cat "$OUTCSV"
+
+echo "Job finished on $(date)"
